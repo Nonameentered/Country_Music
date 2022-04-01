@@ -1,6 +1,7 @@
 ### Project Files
 files/
 not_useful/
+*.code-workspace
 
 ### Mac
 .DS_Store
