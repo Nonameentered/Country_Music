@@ -13,4 +13,5 @@ else:
     print("name:\t\t%s" % artist["name"])
     print("sort name:\t%s" % artist["sort-name"])
     print("tags:\t%s" % artist["tag-list"])
+    print("gender:\t%s" % artist["gender"])
     print(artist.keys())
