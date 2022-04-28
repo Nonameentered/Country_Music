@@ -25,6 +25,7 @@ library(stringdist)
 ```{r}
 conn <- dbConnect(RSQLite::SQLite(), "files/22-04-21-playback-fm-top-country.db")
 dfSongs <- dbGetQuery(conn, 'SELECT * FROM lyrics')
+dfArtists <- dbGetQuery(conn, 'SELECT * FROM artists')
 dbDisconnect(conn)
 ```
 
@@ -203,7 +204,7 @@ num_topics <- 7 # Chosen after above search and some playing around
 out_covariates_7 <- stm(prepped_data$documents,
                          prepped_data$vocab,
                          K = num_topics,
-                         prevalence = ~ rank + year,
+                         prevalence = ~ rank * year,
                          max.em.its = 500,
                          data = prepped_data$meta,
                          seed = 592669)
@@ -291,14 +292,26 @@ plot(eff,
 
 ```{r}
 plot(topicCorr(out_covariates_7), 
-  vlabels = c("1", "2","3","4","5","6","7"), vertex.label.cex = 1.0)
+  vlabels = topic_num, vertex.label.cex = 1.0)
 ```
 Topics 3, 2, 4, 7 are all related. This is an interesting finding! This suggests that traditionalist country especially seems related to both country rock/pop songs
 Topic 2?: Country Rock/Pop
-Topic 3: Traditionalist Country (Pardi, Hank Williams)
+Topic 3: Traditionalist Country
 Topic 4: Bro-Country
 Topic 7: Family
 
-## Questions/Interests
-How would I see where artists were grouped in terms of topics
+## More on Topic Models
+### Questions/Interests
+- How would I see where individual artists fell in terms of topics?
+ - In general, seeing prevalence of certain
+ - Would it be, taking the top x documents for different topics and counting from there?
+### More to Do?
+- Plot covariate interaction!
+  - Particularly interested in tracking gender * year interactions!
+
+## Word Embeddings - Quanteda
+```{r}
+library(quanteda)
+library(conText)
+```
 
