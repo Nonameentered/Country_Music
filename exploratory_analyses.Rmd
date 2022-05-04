@@ -1,0 +1,86 @@
+---
+title: "22-05-03-exploratory-analysis"
+author: "Matt Shu"
+date: "`r Sys.Date()`"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Prereqs
+
+```{r}
+library(tidyverse)
+library(RSQLite)
+library(xtable)
+```
+
+## Load Dataset
+```{r}
+conn <- dbConnect(RSQLite::SQLite(), "files/22-04-21-playback-fm-top-country.db")
+cleaned_df <- dbGetQuery(conn, 'SELECT * FROM cleaned')
+dbDisconnect(conn)
+```
+
+```{r}
+count(cleaned_df %>% filter(cleaned_df$year == 2021))
+```
+
+```{r}
+count(cleaned_df %>% filter(is.na(cleaned_df$type)))
+```
+
+## Make Visualizations
+```{r}
+summary(cleaned_df$year)
+length(cleaned_df$year)
+```
+
+```{r}
+pdf(file = "figures/year-hist.pdf", width = 4, # The width of the plot in inches
+    height = 2.5) # The height of the plot in inches
+# hist(cleaned_df$year, )
+ggplot(cleaned_df, aes(x=year)) + geom_histogram(bins = max(cleaned_df$year) - min(cleaned_df$year) + 1)
+dev.off()
+```
+
+## Check Column Stats
+```{r}
+cleaned_df %>% count(gender)
+```
+
+```{r}
+print(xtable(cleaned_df %>% count(type), type = "latex"), file = "type-table.tex")
+```
+
+```{r}
+# Help from https://stackoverflow.com/questions/45341541/group-by-in-dplyr-and-calculating-percentages
+gender_year_df <- cleaned_df %>%
+  filter(gender != "non-binary") %>%
+  filter(gender != "group") %>%
+  mutate(year_factor = factor(year), gender = factor(gender)) %>%
+  group_by(year_factor, gender, .drop = FALSE) %>%
+  summarize(gender_total=n()) %>%
+  group_by(year_factor, .drop = FALSE) %>%
+  summarize(gender=gender, gender_percent=round(gender_total/sum(gender_total)*100, 2))  %>%
+  mutate(year=as.numeric(as.character(year_factor)))
+```
+```{r}
+# https://stackoverflow.com/questions/40711980/r-ggplot2-fit-curve-to-scatter-plot
+pdf(file = "figures/gender-over-time.pdf", width = 4, # The width of the plot in inches
+    height = 3)
+ggplot(gender_year_df, aes(x = year, y = gender_percent, color = gender) ) +
+  geom_point() +
+  xlim(1940,2020) +
+  geom_smooth(method = "gam", alpha = .5, aes(fill = gender)) +
+  ylab("Percent of Top Country Songs (%)") +
+  xlab("Year") + 
+  labs(color = "Gender", fill = "Gender") 
+# Create one legend https://stackoverflow.com/questions/15370496/ggplot2-draws-two-legends
+dev.off()
+```
+
+
+

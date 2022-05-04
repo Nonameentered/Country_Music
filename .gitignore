@@ -2,6 +2,8 @@
 files/
 archive/
 *.code-workspace
+playback_analyses_files/
+playback_analyses_cache/
 
 ### Mac
 .DS_Store

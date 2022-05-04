@@ -3,8 +3,9 @@ title: "Country Music Project"
 author: "Matt Shu"
 date: "`r Sys.Date()`"
 output:
-  word_document: default
   pdf_document: default
+  word_document:
+    keep_md: true
 ---
 
 ```{r setup, include=FALSE}
@@ -29,73 +30,13 @@ devtools::install_github("mikajoh/tidystm", dependencies = TRUE)
 library(tidystm)
 ```
 
-
-## Preprocessing
-Note: 
 ```{r}
 conn <- dbConnect(RSQLite::SQLite(), "files/22-04-21-playback-fm-top-country.db")
-dfSongs <- dbGetQuery(conn, 'SELECT * FROM lyrics')
-dfArtists <- dbGetQuery(conn, 'SELECT * FROM artists')
+cleaned_df <- dbGetQuery(conn, 'SELECT * FROM cleaned')
 dbDisconnect(conn)
 ```
-
-## Dataset Visualizations
-There are some duplicate songs for those who charted multiple years. Remove those songs
 ```{r}
-dim(dfSongs)
-dfSongs <- distinct(dfSongs, artist, track, .keep_all = TRUE)
-dim(dfSongs)
-```
-Turn "nan" into NA's and select only variables of interest
-```{r}
-dfArtists[dfArtists == "nan"] <- NA
-dfArtistsInterest <- dfArtists %>%
-   dplyr::select(artist_id, mb_id, type, area.name, gender, life_span.begin, life_span.ended) %>%
-   # the objects need to be class "data frame" 
-   as.data.frame()
-```
-
-```{r}
-dfSongsArtists <- merge(dfSongs,dfArtistsInterest,by="artist_id")
-```
-
-```{r Remove Missing}
-cleaned_df <-dfSongsArtists %>%
-  # first, remove observation with missing values of the meta variables
-  filter(!is.na(lyrics))  %>%
-  # first, remove observation with missing values of the meta variables
-  filter(!is.na(artist))  %>%
-  as.data.frame()
-cleaned_df$lyrics <- str_replace_all(cleaned_df$lyrics,"[\\s]+", " ")
-```
-## Create ID Hashes
-```{r}
-# cleaned_df$artist_id <- as.character(as.numeric(as.factor(cleaned_df$artist)))
-cleaned_df$song_id <- as.character((10000 + as.numeric(as.factor(cleaned_df$track))))
-```
-
-## Filter out Mismatches
-
-```{r Remove Erroneous Lyrics}
-dim(cleaned_df)
-cleaned_df$cleaned_lyrics <- 
-  str_replace_all(cleaned_df$lyrics, 'Chap\\. [0-9]', NA_character_) %>%
-  str_replace_all(., 'Listening Log', NA_character_) %>%
-  str_replace_all(., 'Favorite Songs Of', NA_character_) %>%
-  str_replace_all(., 'Chapter [0-9]', NA_character_) %>%
-  str_replace_all(., 'New Music ', NA_character_) %>%
-  str_replace_all(., 'Nominees', NA_character_) %>%
-  str_replace_all(., 'Best Songs of ', NA_character_) %>%
-  str_replace_all(., "[0-9]+ U S", NA_character_) %>% # Court Cases
-  str_replace_all(., "[0-9]+ U.S", NA_character_) %>% # Court Cases
-  str_replace_all(.,"[ ]+", " ") %>%
-  str_replace(., ".*Lyrics", "")
-cleaned_df <- cleaned_df %>%
-  filter(!is.na(cleaned_lyrics)) %>%
-  filter(levenshteinSim(track, str_match(lyrics, "(.*)Lyrics")[,2]) > .5) %>% # There are some false positives, when there are other languages
-  as.data.frame()
-dim(cleaned_df)
-cleaned_df$lyrics_alnum <- cleaned_df$cleaned_lyrics %>% str_replace_all(., "[^[:alnum:]]", " ")
+names(cleaned_df)
 ```
 
 ## Preprocessing (and STM exploration)
@@ -112,7 +53,7 @@ docs_df <- cleaned_df %>%
 ```{r}
 # Dataframe containing (sample) documents' metadata of interest
 meta_df <- cleaned_df %>%
-   dplyr::select(track_id, rank, artist, track, year) %>%
+   dplyr::select(track_id, rank, artist, track, year, gender) %>%
    # the objects need to be class "data frame" 
    as.data.frame()
 ```
@@ -188,12 +129,12 @@ searched = searchK(prepped_data$documents,
                    K = k_seq,
                    data = prepped_data$meta, 
                    seed = 183654)
-saveRDS(searched, file = "22-04-29-searchK.RData")
+saveRDS(searched, file = "files/22-04-29-searchK.RData")
 ```
 
 ### Show K
-```{r}
-searched <- readRDS("22-04-29-searchK.RData")
+```{r, cache=TRUE}
+searched <- readRDS("files/22-04-29-searchK.RData")
 # Get values from `searchK` output
 semcoh <- unlist(searched$results$semcoh)
 exclus <- unlist(searched$results$exclus)
@@ -229,7 +170,7 @@ num_topics <- 7 # Chosen after above search and some playing around
 out_covariates_7 <- stm(prepped_data$documents,
                          prepped_data$vocab,
                          K = num_topics,
-                         prevalence = ~ rank + year,
+                         prevalence = ~ rank + year * gender,
                          max.em.its = 500,
                          data = prepped_data$meta,
                          seed = 592669)
@@ -322,6 +263,7 @@ eff1 <- estimateEffect(formula = c(1:num_topics) ~ s(year),
 #      xlim=c(1940, 2020),
 #      main = "Effect of Year on Topic Proportion")
 ```
+
 ```{r}
 effect <- lapply(c(0, 1), function(i) {
   extract.estimateEffect(eff1,
@@ -343,8 +285,8 @@ ggplot(effect, aes(x = covariate.value, y = estimate,
   labs(x = "Year",
        y = "Expected Topic Proportion") + 
   scale_x_continuous(breaks=c(1940, 1960, 1980, 2000, 2020), 
-   labels=waiver(), 
-   expand=c(0,0), lim=c(0,100))
+   labels=waiver(), lim=c(1940,2020)) + 
+  theme(panel.spacing = unit(1, "lines"))
 
 ```
 
@@ -367,8 +309,14 @@ plot(eff,
 ```
 
 ```{r}
-plot(topicCorr(out_covariates_7), 
-  vlabels = topic_labels, vertex.label.cex = 1.0)
+
+
+library(huge)
+topic_corr <- topicCorr(out_covariates_7, method = "huge")
+topic_corr
+set.seed(5)
+plot(topic_corr, 
+  vlabels = topic_labels, vertex.label.cex = 1, layout =  layout.auto)
 ```
 Topics 3, 2, 4, 7 are all related. This is an interesting finding! This suggests that traditionalist country especially seems related to both country rock/pop songs
 Topic 2?: Country Rock/Pop
@@ -385,197 +333,3 @@ Topic 7: Family
 - Plot covariate interaction!
   - Particularly interested in tracking gender * year interactions!
 
-## ConText
-```{r}
-library(quanteda)
-library(conText)
-```
-
-```{r}
-glove <- readRDS("/Users/mattshu/Code/Country/files/glove.rds")
-transform <- readRDS("/Users/mattshu/Code/Country/files/khodakA.rds")
-```
-
-```{r}
-df_gendered <- cleaned_df %>%
-  filter(gender == "male" | gender == "female")
-```
-
-
-
-```{r}
-artist_meta_df <- df_gendered %>%
-   dplyr::select(track_id, rank, artist, track, year, gender) %>%
-   # the objects need to be class "data frame" 
-   as.data.frame()
-par_corpus <- quanteda::corpus(df_gendered$cleaned_lyrics, docvars = artist_meta_df)
-```
-
-```{r}
-print(par_corpus)
-```
-```{r}
-# From Vignette, modified
-# tokenize corpus removing unnecessary (i.e. semantically uninformative) elements
-toks <- tokens(par_corpus, remove_punct=T, remove_symbols=T, remove_numbers=T, remove_separators=T)
-
-# clean out stopwords and words with 2 or fewer characters
-toks_nostop <- tokens_select(toks, pattern = stopwords("en"), selection = "remove", min_nchar=3)
-
-toks_morenostop <- tokens_select(toks_nostop, pattern = c("gonna", "gotta", "cuz", "somebody", "maybe", "wanna", "yeah", "everybody", "shoulda", "kinda", "coulda", "ooh"), selection = "remove")
-# only use features that appear at least 3 times in the corpus (follow Week 8 lecture)
-feats <- dfm(toks_morenostop, tolower=T, verbose = FALSE) %>% dfm_trim(min_termfreq = 3) %>% featnames()
-
-# leave the pads so that non-adjacent words will not become adjacent
-toks <- tokens_select(toks_nostop, feats, padding = TRUE)
-```
-
-```{r, message=FALSE, warning=FALSE, results='hide'}
-searchConText <- function(term) {
-  # # Build a tokenized corpus of contexts surrounding the target term 
-  target_toks <- tokens_context(x = toks, pattern = term, window = 6L)
-  # Build document-feature matrix (documents x context counts)
-  target_dfm <- dfm(target_toks)
-  # Construct document-embedding-matrix
-  target_dem <- dem(x = target_dfm, pre_trained = glove, transform = TRUE,
-    transform_matrix = transform, verbose = TRUE)
-  target_wv_group <- dem_group(target_dem,
-                            groups = target_dem@docvars$gender)
-  return(target_wv_group)
-}
-```
-
-
-```{r}
-# # Build a tokenized corpus of contexts surrounding the target term 
-  target_toks <- tokens_context(x = toks, pattern = "american", window = 6L)
-  # Build document-feature matrix (documents x context counts)
-  target_dfm <- dfm(target_toks)
-  # Construct document-embedding-matrix
-  target_dem <- dem(x = target_dfm, pre_trained = glove, transform = TRUE,
-    transform_matrix = transform, verbose = TRUE)
-
-```
-
-```{r}
-head(docvars(target_toks))
-```
-
-```{r}
-
-```
-
-Now, embed the *contexts* in a pre-trained GloVe embedding space, getting a document-embedding matrix (DFM), or the embeddings of the *context* words
-
-```{r, message=FALSE, warning=FALSE, results='hide'}
-
-```
-
-```{r}
-# Average embeddings for each group
-target_wv_group <- dem_group(target_dem,
-                            groups = target_dem@docvars$gender)
-```
-
-```{r}
-lives_nns <- nns(target_wv_group, pre_trained = glove, N = 5,
-                 candidates = target_wv_group@features, as_list = TRUE)
-```
-
-```{r}
-# Results for nationalists
-lives_nns[["female"]]
-
-# Results for Christians
-lives_nns[["male"]]
-```
-```{r}
-target_sim <- cos_sim(target_wv_group, pre_trained = glove,
-                     features = c("love", "freedom"), as_list = TRUE)
-```
-
-```{r}
-target_sim[["love"]]
-target_sim[["freedom"]]
-```
-
-```{r}
-flag_group <- searchConText("kill")
-flag_nns <- nns(flag_group, pre_trained = glove, N = 5,
-                 candidates = flag_group@features, as_list = TRUE)
-# Results for nationalists
-flag_nns[["female"]]
-
-# Results for Christians
-flag_nns[["male"]]
-```
-```{r}
-flag_group <- searchConText("hell")
-flag_nns <- nns(flag_group, pre_trained = glove, N = 5,
-                 candidates = flag_group@features, as_list = TRUE)
-# Results for nationalists
-flag_nns[["female"]]
-
-# Results for Christians
-flag_nns[["male"]]
-```
-## Useful!
-```{r}
-flag_group <- searchConText("red white blue")
-flag_nns <- nns(flag_group, pre_trained = glove, N = 5,
-                 candidates = flag_group@features, as_list = TRUE)
-# Results for nationalists
-flag_nns[["female"]]
-
-# Results for Christians
-flag_nns[["male"]]
-```
-
-```{r}
-flag_group <- searchConText("whiskey")
-flag_nns <- nns(flag_group, pre_trained = glove, N = 5,
-                 candidates = flag_group@features, as_list = TRUE)
-# Results for nationalists
-flag_nns[["female"]]
-
-# Results for Christians
-flag_nns[["male"]]
-```
-
-```{r}
-flag_group <- searchConText("hometown")
-flag_nns <- nns(flag_group, pre_trained = glove, N = 5,
-                 candidates = flag_group@features, as_list = TRUE)
-# Results for nationalists
-flag_nns[["female"]]
-
-# Results for Christians
-flag_nns[["male"]]
-```
-
-```{r}
-flag_group <- searchConText("man")
-flag_nns <- nns(flag_group, pre_trained = glove, N = 5,
-                 candidates = flag_group@features, as_list = TRUE)
-# Results for nationalists
-flag_nns[["female"]]
-
-# Results for Christians
-flag_nns[["male"]]
-```
-
-
-```{r}
-flag_group <- searchConText("woman")
-flag_nns <- nns(flag_group, pre_trained = glove, N = 5,
-                 candidates = flag_group@features, as_list = TRUE)
-# Results for nationalists
-flag_nns[["female"]]
-
-# Results for Christians
-flag_nns[["male"]]
-```
-
-## Questions
-- Can't get cr_glove to work?
-- WHere did lives_dem come from?s

@@ -1,0 +1,68 @@
+---
+title: "quanteda_analyses"
+author: "Matt Shu"
+date: "`r Sys.Date()`"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Prereqs
+
+```{r}
+library(tidyverse)
+library(RSQLite)
+library(quanteda)
+library(quanteda.textstats)
+```
+
+## Load Dataset
+```{r}
+conn <- dbConnect(RSQLite::SQLite(), "files/22-04-21-playback-fm-top-country.db")
+cleaned_df <- dbGetQuery(conn, 'SELECT * FROM cleaned')
+dbDisconnect(conn)
+```
+
+```{r}
+cleaned_corpus <- corpus(
+  cleaned_df,
+  docid_field = "track_id",
+  text_field = "cleaned_lyrics",
+  unique_docnames = TRUE
+)
+summary(cleaned_corpus)
+```
+
+```{r}
+toks <- tokens(cleaned_corpus, remove_punct=T, remove_symbols=T, remove_numbers=T, remove_separators=T)
+country_dfm <- dfm(toks)
+tstat_lexdiv <- textstat_lexdiv(country_dfm)
+?merge()
+cleaned_df <- merge(cleaned_df,tstat_lexdiv, by.x = "track_id",by.y="document")
+tail(tstat_lexdiv, 5)
+cleaned_df$TTR
+year_df <- cleaned_df %>%
+  group_by(year) %>%
+  summarize(TTR = mean(TTR))
+```
+
+```{r}
+pdf(file = "figures/lex-div-over-time.pdf", width = 4, # The width of the plot in inches
+    height = 3)
+ggplot(year_df, aes(x = year, y = TTR)) +
+  geom_point() +
+  geom_smooth(method = "gam", alpha = .5) +
+  xlim(1940,2020) +
+  ylab("Lexical Diversity (Type-Token Ratio)") +
+  xlab("Year")
+dev.off()
+```
+
+
+```{r}
+tstat_lexdiv$TTR
+
+```
+

@@ -1,0 +1,222 @@
+---
+title: "Context_analyses"
+author: "Matt Shu"
+date: "`r Sys.Date()`"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r, message=FALSE, results = 'hide'}
+library(tidyverse)
+library(RSQLite)
+library(quanteda)
+library(conText)
+```
+
+```{r}
+conn <- dbConnect(RSQLite::SQLite(), "files/22-04-21-playback-fm-top-country.db")
+cleaned_df <- dbGetQuery(conn, 'SELECT * FROM cleaned')
+dbDisconnect(conn)
+```
+```{r}
+names(cleaned_df)
+```
+
+```{r}
+glove <- readRDS("/Users/mattshu/Code/Country/files/glove.rds")
+transform <- readRDS("/Users/mattshu/Code/Country/files/khodakA.rds")
+```
+
+```{r}
+df_gendered <- cleaned_df %>%
+  filter(gender == "male" | gender == "female")
+```
+
+
+
+```{r}
+artist_meta_df <- df_gendered %>%
+   dplyr::select(track_id, rank, artist, track, year, gender) %>%
+   # the objects need to be class "data frame" 
+   as.data.frame()
+par_corpus <- quanteda::corpus(df_gendered$cleaned_lyrics, docvars = artist_meta_df)
+```
+
+```{r}
+print(par_corpus)
+```
+```{r}
+# From Vignette, modified
+# tokenize corpus removing unnecessary (i.e. semantically uninformative) elements
+toks <- tokens(par_corpus, remove_punct=T, remove_symbols=T, remove_numbers=T, remove_separators=T)
+
+# clean out stopwords and words with 2 or fewer characters
+toks_nostop <- tokens_select(toks, pattern = stopwords("en"), selection = "remove", min_nchar=3)
+
+toks_morenostop <- tokens_select(toks_nostop, pattern = c("gonna", "gotta", "cuz", "somebody", "maybe", "wanna", "yeah", "everybody", "shoulda", "kinda", "coulda", "ooh"), selection = "remove")
+# only use features that appear at least 3 times in the corpus (follow Week 8 lecture)
+feats <- dfm(toks_morenostop, tolower=T, verbose = FALSE) %>% dfm_trim(min_termfreq = 3) %>% featnames()
+
+# leave the pads so that non-adjacent words will not become adjacent
+toks <- tokens_select(toks_nostop, feats, padding = TRUE)
+```
+
+```{r, message=FALSE, warning=FALSE, results='hide'}
+searchConText <- function(term) {
+  # # Build a tokenized corpus of contexts surrounding the target term 
+  target_toks <- tokens_context(x = toks, pattern = term, window = 6L)
+  # Build document-feature matrix (documents x context counts)
+  target_dfm <- dfm(target_toks)
+  # Construct document-embedding-matrix
+  target_dem <- dem(x = target_dfm, pre_trained = glove, transform = TRUE,
+    transform_matrix = transform, verbose = TRUE)
+  target_wv_group <- dem_group(target_dem,
+                            groups = target_dem@docvars$gender)
+  return(target_wv_group)
+}
+```
+
+
+```{r}
+# # Build a tokenized corpus of contexts surrounding the target term 
+  target_toks <- tokens_context(x = toks, pattern = "american", window = 6L)
+  # Build document-feature matrix (documents x context counts)
+  target_dfm <- dfm(target_toks)
+  # Construct document-embedding-matrix
+  target_dem <- dem(x = target_dfm, pre_trained = glove, transform = TRUE,
+    transform_matrix = transform, verbose = TRUE)
+
+```
+
+```{r}
+head(docvars(target_toks))
+```
+
+```{r}
+
+```
+
+Now, embed the *contexts* in a pre-trained GloVe embedding space, getting a document-embedding matrix (DFM), or the embeddings of the *context* words
+
+```{r, message=FALSE, warning=FALSE, results='hide'}
+
+```
+
+```{r}
+# Average embeddings for each group
+target_wv_group <- dem_group(target_dem,
+                            groups = target_dem@docvars$gender)
+```
+
+```{r}
+lives_nns <- nns(target_wv_group, pre_trained = glove, N = 5,
+                 candidates = target_wv_group@features, as_list = TRUE)
+```
+
+```{r}
+# Results for nationalists
+lives_nns[["female"]]
+
+# Results for Christians
+lives_nns[["male"]]
+```
+```{r}
+target_sim <- cos_sim(target_wv_group, pre_trained = glove,
+                     features = c("love", "freedom"), as_list = TRUE)
+```
+
+```{r}
+target_sim[["love"]]
+target_sim[["freedom"]]
+```
+
+```{r}
+flag_group <- searchConText("kill")
+flag_nns <- nns(flag_group, pre_trained = glove, N = 5,
+                 candidates = flag_group@features, as_list = TRUE)
+# Results for nationalists
+flag_nns[["female"]]
+
+# Results for Christians
+flag_nns[["male"]]
+```
+```{r}
+flag_group <- searchConText("hell")
+flag_nns <- nns(flag_group, pre_trained = glove, N = 5,
+                 candidates = flag_group@features, as_list = TRUE)
+# Results for nationalists
+flag_nns[["female"]]
+
+# Results for Christians
+flag_nns[["male"]]
+```
+## Useful!
+```{r}
+flag_group <- searchConText("red white blue")
+flag_nns <- nns(flag_group, pre_trained = glove, N = 5,
+                 candidates = flag_group@features, as_list = TRUE)
+# Results for nationalists
+flag_nns[["female"]]
+
+# Results for Christians
+flag_nns[["male"]]
+```
+
+```{r}
+flag_group <- searchConText("whiskey")
+flag_nns <- nns(flag_group, pre_trained = glove, N = 5,
+                 candidates = flag_group@features, as_list = TRUE)
+# Results for nationalists
+flag_nns[["female"]]
+
+# Results for Christians
+flag_nns[["male"]]
+```
+
+```{r}
+flag_group <- searchConText("hometown")
+flag_nns <- nns(flag_group, pre_trained = glove, N = 5,
+                 candidates = flag_group@features, as_list = TRUE)
+# Results for nationalists
+flag_nns[["female"]]
+
+# Results for Christians
+flag_nns[["male"]]
+```
+
+```{r}
+flag_group <- searchConText("man")
+flag_nns <- nns(flag_group, pre_trained = glove, N = 5,
+                 candidates = flag_group@features, as_list = TRUE)
+# Results for nationalists
+flag_nns[["female"]]
+
+# Results for Christians
+flag_nns[["male"]]
+```
+
+
+```{r}
+flag_group <- searchConText("woman")
+flag_nns <- nns(flag_group, pre_trained = glove, N = 5,
+                 candidates = flag_group@features, as_list = TRUE)
+# Results for nationalists
+flag_nns[["female"]]
+
+# Results for Christians
+flag_nns[["male"]]
+```
+
+```{r}
+flag_group <- searchConText("pill")
+flag_nns <- nns(flag_group, pre_trained = glove, N = 5,
+                 candidates = flag_group@features, as_list = TRUE)
+# Results for nationalists
+flag_nns[["female"]]
+
+# Results for Christians
+flag_nns[["male"]]
+```
