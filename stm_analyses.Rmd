@@ -6,6 +6,8 @@ output:
   pdf_document: default
   word_document:
     keep_md: true
+knit: (function(inputFile, encoding) {
+  rmarkdown::render(inputFile, encoding = encoding, output_dir = "knitted") })
 ---
 
 ```{r setup, include=FALSE}
@@ -40,20 +42,24 @@ names(cleaned_df)
 ```
 
 ## Preprocessing (and STM exploration)
+
 ```{r}
-# Dataframe containing the text
+cleaned_df <- cleaned_df %>%
+  filter(gender != "non-binary") %>%
+  as.data.frame()
+```
+
+```{r}
 docs_df <- cleaned_df %>%
    dplyr::select(track_id, lyrics_alnum) %>%
-   # first, remove observation with missing values of the meta variables
    filter(!is.na(lyrics_alnum))  %>%
-   # the objects need to be class "data frame" 
    as.data.frame()
 ```
 
 ```{r}
 # Dataframe containing (sample) documents' metadata of interest
 meta_df <- cleaned_df %>%
-   dplyr::select(track_id, rank, artist, track, year, gender) %>%
+   dplyr::select(track_id, rank, artist, track, year, gender, artist_appearances) %>%
    # the objects need to be class "data frame" 
    as.data.frame()
 ```
@@ -76,7 +82,7 @@ processed_docs_1 <- textProcessor(documents = docs_df$lyrics_alnum,
 meta <- processed_docs_1$meta
 vocab <- processed_docs_1$vocab
 docs <- processed_docs_1$documents
-keep <- !is.na(meta$artist) && !is.na(meta$rank)
+keep <- !is.na(meta$artist) & !is.na(meta$rank) & !is.na(meta$gender)
 meta <- meta[keep,]
 docs <- docs[keep]
 ```
@@ -85,10 +91,6 @@ docs <- docs[keep]
 prepped_data <- prepDocuments(docs, 
                              vocab, 
                              meta,
-                             # the lower threshold value means that only words
-                             # that appear more times than the value (in this 
-                             # example the value = 3) will be retained; this is 
-                             # another researcher decision
                              lower.thresh = 2)
 ```
 
@@ -164,9 +166,12 @@ ggplot(search_plot_df, mapping = aes(x = semcoh, y = exclus)) +
 ```
 
 ### Model Work
-```{r, results='hide',}
-# 6 topics seems to also work nice, with a strong "Country" category
+```{r}
 num_topics <- 7 # Chosen after above search and some playing around
+```
+
+```{r, results='hide'}
+# 6 topics seems to also work nice, with a strong "Country" category
 out_covariates_7 <- stm(prepped_data$documents,
                          prepped_data$vocab,
                          K = num_topics,
@@ -175,12 +180,6 @@ out_covariates_7 <- stm(prepped_data$documents,
                          data = prepped_data$meta,
                          seed = 592669)
 
-```
-```{r}
-head(out_covariates_7$theta) # each row is each document
-# To find each artists, link the songs to the artists and then take the average for each artists, for each artist average of the columns
-head(prepped_data$meta) # same order between dataframes
-track_topic_df <- cbind(prepped_data$meta, out_covariates_7$theta)
 ```
 
 ```{r}
@@ -220,34 +219,12 @@ for(topic_num in c(1:num_topics)) {
 topic_labels <- c("Heartbreak", "Cross-Country", "(Neo)-Traditionalist", "Bro-Country", "Sex Jams", "Love Songs", "Family")
 ```
 
-```{r, eval=FALSE, include=FALSE}
-out_covariates_8 <- stm(prepped_data$documents,
-                         prepped_data$vocab,
-                         K = num_topics + 1,
-                         prevalence = ~ rank + year,
-                         max.em.its = 500,
-                         data = prepped_data$meta,
-                         seed = 592669)
-
-plot(out_covariates_8,
-     type = "summary",
-     main = "Prevalence of topics")
-docs_examples_covar_8 <- findThoughts(out_covariates_8,
-                               texts = tmp_doc$track_id,
-                               n = 10,
-                               topics = c(1:(num_topics+1)))
-
-for(topic_num in c(1:(num_topics+1))) {
-  print(paste("Topic ", topic_num))
-  for(track in docs_examples_covar_8$docs[[topic_num]]) {
-    print(cleaned_df$track[cleaned_df$track_id == track])
-  }
-  print("")
-}
-```
 
 ```{r}
-eff1 <- estimateEffect(formula = c(1:num_topics) ~ s(year),
+num_topics <- 7
+length(prepped_data$meta$year)
+length(prepped_data$meta$gender)
+eff1 <- estimateEffect(formula = c(1:7) ~ s(year) * gender,
                       # the line above matches the model specification we used
                       stmobj = out_covariates_7,
                       meta = prepped_data$meta,
@@ -273,7 +250,7 @@ effect <- lapply(c(0, 1), function(i) {
      method = "continuous")
 })
 effect <- do.call("rbind", effect)
-effect <- effect %>% mutate(label = recode(topic, "1"=topic_labels[1], "2" = topic_labels[2], "3" = topic_labels[3], "4" = topic_labels[4], "5" = topic_labels[5], "6" = topic_labels[6], "7" = topic_labels[7]))
+effect <- effect %>% mutate(label = dplyr::recode(topic, "1"=topic_labels[1], "2" = topic_labels[2], "3" = topic_labels[3], "4" = topic_labels[4], "5" = topic_labels[5], "6" = topic_labels[6], "7" = topic_labels[7]))
 ## And, for example, plot it with ggplot2 and facet by topic instead.
 library(ggplot2)
 
@@ -290,23 +267,40 @@ ggplot(effect, aes(x = covariate.value, y = estimate,
 
 ```
 
-
-```{r, eval=FALSE}
-eff <- estimateEffect(formula = c(1:num_topics) ~ year,
+```{r}
+eff <- estimateEffect(formula = c(1:num_topics) ~ s(year) * gender,
                       # the line above matches the model specification we used
                       stmobj = out_covariates_7,
                       meta = prepped_data$meta,
                       uncertainty = "Global")
 
-# Second, plot the results
-plot(eff,
+effect <- lapply(c("male", "female"), function(i) {
+  extract.estimateEffect(x = eff,
      covariate = "year",
      topics = c(1:num_topics),
      model = out_covariates_7,
      method = "continuous",
-     xlab = "Year",
-     main = "Effect of Year on Topic Proportion")
+     moderator = "gender",
+     moderator.value = i)
+})
+effect <- do.call("rbind", effect)
+effect <- effect %>% mutate(label = dplyr::recode(topic, "1"=topic_labels[1], "2" = topic_labels[2], "3" = topic_labels[3], "4" = topic_labels[4], "5" = topic_labels[5], "6" = topic_labels[6], "7" = topic_labels[7]))
+
+ggplot(effect, aes(x = covariate.value, y = estimate,
+                   ymin = ci.lower, ymax = ci.upper,
+                   group = moderator.value,
+                   fill = factor(moderator.value))) +
+  facet_wrap(~ label, nrow = 2) +
+  geom_ribbon(alpha = .5) +
+  geom_line() +
+  labs(x = "Year",
+       y = "Expected Topic Proportion") + 
+  scale_x_continuous(breaks=c(1940, 1960, 1980, 2000, 2020), 
+   labels=waiver(), lim=c(1940,2020)) + 
+  theme(panel.spacing = unit(2, "lines"), legend.direction="horizontal",legend.position="bottom", legend.box = "vertical") +
+  labs(fill = "Gender") 
 ```
+
 
 ```{r}
 
@@ -332,4 +326,45 @@ Topic 7: Family
 ### More to Do?
 - Plot covariate interaction!
   - Particularly interested in tracking gender * year interactions!
+  
+## Artist Validation
+```{r}
+head(out_covariates_7$theta) # each row is each document
+# To find each artists, link the songs to the artists and then take the average for each artists, for each artist average of the columns
+head(prepped_data$meta) # same order between dataframes
+track_topic_df <- cbind(prepped_data$meta, out_covariates_7$theta)
+artist_topic_df <- track_topic_df %>%
+  filter(artist_appearances > 1) %>%
+  group_by(artist) %>%
+  summarize(mean_1=mean(`1`),mean_2=mean(`2`), mean_3=mean(`3`), mean_4=mean(`4`), mean_5=mean(`5`), mean_6=mean(`6`), mean_7=mean(`7`))
+colnames(artist_topic_df)[2:(1+num_topics)] <- topic_labels
+for(topic in topic_labels) {
+  print(artist_topic_df %>% arrange(desc(.data[[topic]])) %>% slice(1:5))
+}
+```
+
+## Female Artist Popularity + Subgenres
+```{r}
+gender_year_df <- track_topic_df %>%
+  filter(gender != "non-binary") %>%
+  filter(gender != "group") %>%
+  mutate(year_factor = factor(year), gender = factor(gender)) %>%
+  group_by(year_factor, gender) %>%
+  filter(n() > 2) %>%
+  summarize(mean_1=mean(`1`),mean_2=mean(`2`), mean_3=mean(`3`), mean_4=mean(`4`), mean_5=mean(`5`), mean_6=mean(`6`), mean_7=mean(`7`)) %>%
+  # summarize(gender_total=n(), sum_TTR=ifelse(gender_total != 0, sum(TTR)/gender_total, 0))  %>%
+  mutate(year=as.numeric(as.character(year_factor)))
+```
+```{r}
+lm(unlist(gender_year_df[,paste0("mean_", 1)]) ~ gender_year_df$gender)
+for(topic in c(1:7)) {
+  print(paste("Topic:", topic_labels[topic]))
+  anc1 <- lm(unlist(gender_year_df[,paste0("mean_", topic)]) ~ gender + year + gender*year, data = gender_year_df)
+  Anova(anc1, type = 3)
+  print(summary(anc1))
+  myResPlots2(anc1)
+}
+
+```
+
 

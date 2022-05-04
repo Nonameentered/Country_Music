@@ -74,8 +74,9 @@ cleaned_df$lyrics_alnum <- cleaned_df$cleaned_lyrics %>% str_replace_all(., "[^[
 ```{r}
 cleaned_df <- cleaned_df %>% 
     mutate(gender = replace(gender, gender == "other", "non-binary")) %>% 
-    mutate(gender = replace(gender, is.na(gender), "group"))
+    mutate(gender = replace(gender, is.na(gender), "unknown"))
 ```
+
 
 ```{r}
 cleaned_df <- cleaned_df %>% select(-c(level_0, index))

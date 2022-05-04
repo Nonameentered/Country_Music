@@ -3,6 +3,8 @@ title: "22-05-03-exploratory-analysis"
 author: "Matt Shu"
 date: "`r Sys.Date()`"
 output: pdf_document
+knit: (function(inputFile, encoding) {
+  rmarkdown::render(inputFile, encoding = encoding, output_dir = "knitted") })
 ---
 
 ```{r setup, include=FALSE}
@@ -48,11 +50,11 @@ dev.off()
 
 ## Check Column Stats
 ```{r}
-cleaned_df %>% count(gender)
+print(xtable(cleaned_df %>% mutate(gender = replace(gender, gender =="unknown", "unknown or group")) %>% count(gender), type = "latex"), file = "figures/gender-table.tex")
 ```
 
 ```{r}
-print(xtable(cleaned_df %>% count(type), type = "latex"), file = "type-table.tex")
+print(xtable(cleaned_df %>% count(type), type = "latex"), file = "figures/type-table.tex")
 ```
 
 ```{r}
@@ -81,6 +83,3 @@ ggplot(gender_year_df, aes(x = year, y = gender_percent, color = gender) ) +
 # Create one legend https://stackoverflow.com/questions/15370496/ggplot2-draws-two-legends
 dev.off()
 ```
-
-
-

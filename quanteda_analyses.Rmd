@@ -16,6 +16,7 @@ library(tidyverse)
 library(RSQLite)
 library(quanteda)
 library(quanteda.textstats)
+library(car)
 ```
 
 ## Load Dataset
@@ -32,25 +33,22 @@ cleaned_corpus <- corpus(
   text_field = "cleaned_lyrics",
   unique_docnames = TRUE
 )
-summary(cleaned_corpus)
 ```
 
 ```{r}
 toks <- tokens(cleaned_corpus, remove_punct=T, remove_symbols=T, remove_numbers=T, remove_separators=T)
 country_dfm <- dfm(toks)
-tstat_lexdiv <- textstat_lexdiv(country_dfm)
+tstat_lexdiv <- textstat_lexdiv(country_dfm, measure="TTR")
 ?merge()
 cleaned_df <- merge(cleaned_df,tstat_lexdiv, by.x = "track_id",by.y="document")
 tail(tstat_lexdiv, 5)
-cleaned_df$TTR
 year_df <- cleaned_df %>%
   group_by(year) %>%
   summarize(TTR = mean(TTR))
 ```
 
 ```{r}
-pdf(file = "figures/lex-div-over-time.pdf", width = 4, # The width of the plot in inches
-    height = 3)
+pdf(file = "figures/lex-div-over-time.pdf", width = 4, height = 3)
 ggplot(year_df, aes(x = year, y = TTR)) +
   geom_point() +
   geom_smooth(method = "gam", alpha = .5) +
@@ -60,9 +58,41 @@ ggplot(year_df, aes(x = year, y = TTR)) +
 dev.off()
 ```
 
+```{r}
+male_female_df <- cleaned_df %>%
+  filter(gender != "non-binary") %>%
+  filter(gender != "group")
+qqPlot(male_female_df$TTR)
+t.test(male_female_df$TTR ~ male_female_df$gender)
+```
 
 ```{r}
-tstat_lexdiv$TTR
+gender_year_df <- cleaned_df %>%
+  filter(gender != "non-binary") %>%
+  filter(gender != "group") %>%
+  mutate(year_factor = factor(year), gender = factor(gender)) %>%
+  group_by(year_factor, gender) %>%
+  summarize(gender_total=n(), sum_TTR=ifelse(gender_total != 0, sum(TTR)/gender_total, 0))  %>%
+  mutate(year=as.numeric(as.character(year_factor)))
+```
 
+```{r}
+# pdf(file = "figures/gender-complexity-over-time.pdf", width = 4, height = 3)
+ggplot(gender_year_df, aes(x = year, y = sum_TTR, color = gender) ) +
+  geom_point() +
+  xlim(1940,2020) +
+  geom_smooth(method = "gam", alpha = .5, aes(fill = gender)) +
+  ylab("Percent of Top Country Songs (%)") +
+  xlab("Year") + 
+  labs(color = "Gender", fill = "Gender") 
+# Create one legend https://stackoverflow.com/questions/15370496/ggplot2-draws-two-legends
+# dev.off()
+```
+
+```{r}
+anc1 <- lm(TTR ~ gender + year + gender*year, data = male_female_df)
+Anova(anc1, type = 3)
+summary(anc1)
+myResPlots2(anc1)
 ```
 
