@@ -28,8 +28,10 @@ library(RecordLinkage)
 library(stringdist)
 library(devtools)
 library(tm)
-devtools::install_github("mikajoh/tidystm", dependencies = TRUE)
+# devtools::install_github("mikajoh/tidystm", dependencies = TRUE)
 library(tidystm)
+library(car)
+library(xtable)
 ```
 
 ```{r}
@@ -216,7 +218,7 @@ for(topic_num in c(1:num_topics)) {
 # Topic 5: Sex Jams
 # Topic 6: Love songs
 # Topic 7: Family
-topic_labels <- c("Heartbreak", "Cross-Country", "(Neo)-Traditionalist", "Bro-Country", "Sex Jams", "Love Songs", "Family")
+topic_labels <- c("Heartbreak", "Cross-Country", "(Neo)-Traditional", "Bro-Country", "Sex Jams", "Romance", "Family")
 ```
 
 
@@ -268,6 +270,7 @@ ggplot(effect, aes(x = covariate.value, y = estimate,
 ```
 
 ```{r}
+pdf(file = "figures/gender-subgenre-time.pdf", width = 10)
 eff <- estimateEffect(formula = c(1:num_topics) ~ s(year) * gender,
                       # the line above matches the model specification we used
                       stmobj = out_covariates_7,
@@ -299,6 +302,7 @@ ggplot(effect, aes(x = covariate.value, y = estimate,
    labels=waiver(), lim=c(1940,2020)) + 
   theme(panel.spacing = unit(2, "lines"), legend.direction="horizontal",legend.position="bottom", legend.box = "vertical") +
   labs(fill = "Gender") 
+dev.off()
 ```
 
 
@@ -338,6 +342,7 @@ artist_topic_df <- track_topic_df %>%
   group_by(artist) %>%
   summarize(mean_1=mean(`1`),mean_2=mean(`2`), mean_3=mean(`3`), mean_4=mean(`4`), mean_5=mean(`5`), mean_6=mean(`6`), mean_7=mean(`7`))
 colnames(artist_topic_df)[2:(1+num_topics)] <- topic_labels
+artist_topic_df
 for(topic in topic_labels) {
   print(artist_topic_df %>% arrange(desc(.data[[topic]])) %>% slice(1:5))
 }
@@ -362,9 +367,16 @@ for(topic in c(1:7)) {
   anc1 <- lm(unlist(gender_year_df[,paste0("mean_", topic)]) ~ gender + year + gender*year, data = gender_year_df)
   Anova(anc1, type = 3)
   print(summary(anc1))
-  myResPlots2(anc1)
 }
 
+```
+
+```{r}
+selected_tracks <- c("All Alone in This World without You", "Coat of Many Colors", "Ring Of Fire", "Mama Tried", "Marry Me", "Little Bitty")
+
+colnames(track_topic_df)[8:(7+num_topics)] <- topic_labels
+selected_track_topics <- track_topic_df %>% filter(track %in% selected_tracks) %>% mutate(across(8:(7+num_topics), round, 2)) %>% select(-c(track_id, rank, gender, artist_appearances)) 
+print(xtable(selected_track_topics, type = "latex"), file = "figures/track_topics.tex")
 ```
 
 
