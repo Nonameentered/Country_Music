@@ -270,8 +270,8 @@ ggplot(effect, aes(x = covariate.value, y = estimate,
 ```
 
 ```{r}
-pdf(file = "figures/gender-subgenre-time.pdf", width = 10)
-eff <- estimateEffect(formula = c(1:num_topics) ~ s(year) * gender,
+# pdf(file = "figures/gender-subgenre-time.pdf", width = 10)
+eff <- estimateEffect(formula = c(1:7) ~ s(year) * gender,
                       # the line above matches the model specification we used
                       stmobj = out_covariates_7,
                       meta = prepped_data$meta,
@@ -302,7 +302,7 @@ ggplot(effect, aes(x = covariate.value, y = estimate,
    labels=waiver(), lim=c(1940,2020)) + 
   theme(panel.spacing = unit(2, "lines"), legend.direction="horizontal",legend.position="bottom", legend.box = "vertical") +
   labs(fill = "Gender") 
-dev.off()
+# dev.off()
 ```
 
 
@@ -360,6 +360,14 @@ gender_year_df <- track_topic_df %>%
   # summarize(gender_total=n(), sum_TTR=ifelse(gender_total != 0, sum(TTR)/gender_total, 0))  %>%
   mutate(year=as.numeric(as.character(year_factor)))
 ```
+
+```{r}
+for(topic in c(1:7)) {
+  boxplot(unlist(gender_year_df[,paste0("mean_", topic)]) ~ gender_year_df$gender)
+}
+```
+
+
 ```{r}
 lm(unlist(gender_year_df[,paste0("mean_", 1)]) ~ gender_year_df$gender)
 for(topic in c(1:7)) {
